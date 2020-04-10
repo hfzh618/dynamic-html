@@ -1,0 +1,211 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width">
+    <title>地点关键字 + 驾车路线规划</title>
+
+    <style>
+        #container {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+
+    <link rel="stylesheet" href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css" />
+</head>
+
+<body>
+
+<div class="layui-body-header">
+    <span class="layui-body-header-title">车辆监控</span>
+</div>
+
+<div class="input-card" id="container"></div>
+
+<div class="input-card">
+    <h4>轨迹回放控制</h4>
+    <div class="input-item">
+        <input type="button" class="btn" value="开始动画" id="start" onclick="startAnimation()"/>
+        <input type="button" class="btn" value="暂停动画" id="pause" onclick="pauseAnimation()"/>
+    </div>
+    <div class="input-item">
+        <input type="button" class="btn" value="继续动画" id="resume" onclick="resumeAnimation()"/>
+        <input type="button" class="btn" value="停止动画" id="stop" onclick="stopAnimation()"/>
+    </div>
+</div>
+
+
+
+<script type="text/javascript" src="https://webapi.amap.com/maps?v=1.4.15&key=326c90e9d47f6a9710bc5e4594bb28f3&plugin=AMap.Driving"></script>
+<script type="text/javascript">
+    const map = new AMap.Map("container", {
+        resizeEnable: false,
+        center: [121.598251,31.190434],
+        zoom: 14
+    });
+
+    var cangkuMarker;
+    var passedPolyline;
+    var allPaths;
+
+
+    function httpGet()
+    {
+        //1.读取初始路线数据
+        const xmlHttp = new XMLHttpRequest();
+        xmlHttp.open( "GET", "http://10.141.209.224:5001/vehicles", false ); // false for synchronous request
+        xmlHttp.send( null );
+        const text = xmlHttp.responseText;
+        const obj = JSON.parse(text);
+
+        //2.获取仓库数据
+        const cangku_obj = obj.data.find(a => a.hasOwnProperty("仓库位置"));
+        const cangku_lng = cangku_obj.仓库位置[0];
+        const cangku_lat = cangku_obj.仓库位置[1];
+        const cangkuArr = [];
+        cangkuArr.push(cangku_lng);
+        cangkuArr.push(cangku_lat);
+
+        cangkuMarker = new AMap.Marker({
+            map: map,
+            position: [cangku_lng,cangku_lat],
+            icon: "https://webapi.amap.com/images/car.png",
+            offset: new AMap.Pixel(-26,-13),
+            autoRotation: true,
+            angle: -90,
+        });
+
+        //3.获取行驶路线
+        const cars = obj.data.find(a => Array.isArray(a)).map(a => Object.keys(a)[0]);
+        console.log("cars len"+cars.length);
+        // cars.forEach(car => {
+            var car = cars[0];
+
+
+            console.log(car);
+            const baohan_mendian = obj.data.find(a => a.hasOwnProperty(car+"包含门店"))[car+"包含门店"];
+            console.log(baohan_mendian);
+
+            var lnglatArr = [];
+            lnglatArr.push(cangkuArr); //加入仓库的数据
+
+            //遍历该路线里的所有的门店
+            baohan_mendian.forEach(mendian => {
+                //得到门店的经纬度
+                xmlHttp.open( "GET", "http://10.141.209.224:5003/site?id="+mendian, false );
+                xmlHttp.send( null );
+                const lngJson = xmlHttp.responseText;
+                const mendian_lng = JSON.parse(lngJson).lng;
+                const mendian_lat = JSON.parse(lngJson).lat;
+
+                var mendianLatLngArr = [];
+                mendianLatLngArr.push(mendian_lng);
+                mendianLatLngArr.push(mendian_lat);
+                lnglatArr.push(mendianLatLngArr);
+                //生成门店的符号
+                const mendianMarker = new AMap.Marker({
+                    map: map,
+                    position: [mendian_lng,mendian_lat],
+                    icon: "https://webapi.amap.com/theme/v1.3/hotNew.png",//webapi.amap.com/theme/v1.3/hotNew.png
+                    offset: new AMap.Pixel(-26,-13),
+                    autoRotation: true,
+                    angle: -90,
+                });
+            });
+
+
+            //调用路径规划生成数据
+            var driving = new AMap.Driving({
+                map: map,
+            });
+
+            var allStartPoints = [];
+            allPaths = [];
+            for (var i = 0;i < lnglatArr.length-1;i++){
+                var start = new AMap.LngLat(lnglatArr[i][0],lnglatArr[i][1]);
+                var end = new AMap.LngLat(lnglatArr[i+1][0],lnglatArr[i+1][1]);
+                driving.search(start, end, function (status, result) {
+                    if (status === 'complete') {
+                        var allWays = result.routes[0].steps;
+                        for (let i = 0; i < allWays.length; i++) {
+                            /**
+                             * 起始点信息
+                             * */
+                            var step = allWays[i];
+                            var startArr = [];
+                            startArr.push(step.start_location.lng);
+                            startArr.push(step.start_location.lat);
+                            allStartPoints.push(startArr);
+                            allPaths.push(startArr);
+                            /**
+                             * 每一段的点集
+                             * 这里只将有交叉路口的中间点加入到点集中
+                             **/
+                            var PathArr = step.path;
+                            for (var t = 0; t < PathArr.length; t++) {
+                                var eachPathPoint = PathArr[t];
+                                var eachPathArr = [];
+                                eachPathArr.push(eachPathPoint.lng);
+                                eachPathArr.push(eachPathPoint.lat);
+                                //折线图使用
+                                allPaths.push(eachPathArr);
+                                allStartPoints.push(eachPathArr);
+                            }
+                        }
+                    }
+                });
+            }
+
+
+            console.log("allPaths");
+            console.log(allPaths);
+
+
+            //画出所有的路径
+            passedPolyline = new AMap.Polyline({
+                map: map,
+                path: allPaths,
+                strokeColor: "#111",  //线颜色
+                strokeWeight: 6,      //线宽
+            });
+
+
+
+        // });
+
+
+        cangkuMarker.on('moving', function (e) {
+            passedPolyline.setPath(e.passedPath);
+        });
+
+        map.setFitView();
+
+    }
+
+    httpGet();
+
+    console.log("passedPolyline:"+passedPolyline);
+
+    function stopAnimation () {
+        cangkuMarker.stopMove();
+    }
+
+    function resumeAnimation () {
+        cangkuMarker.resumeMove();
+    }
+
+    function pauseAnimation () {
+        cangkuMarker.pauseMove();
+    }
+
+    function startAnimation () {
+        cangkuMarker.moveAlong(allPaths,1000);
+        // console.log(cangkuMarker.);
+        console.log(cangkuMarker.getPosition( ));
+    }
+
+</script>
+</body>
+</html>
