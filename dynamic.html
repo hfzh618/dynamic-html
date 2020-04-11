@@ -129,10 +129,11 @@
         cangkuMarker = new AMap.Marker({
             map: map,
             position: [cangku_lng,cangku_lat],
-            icon: "https://webapi.amap.com/images/car.png",
+            // icon: "https://webapi.amap.com/images/car.png",
+            icon: "ware.png",
             offset: new AMap.Pixel(-26,-13),
             autoRotation: true,
-            angle: -90,
+            // angle: -90,
         });
     }
 
@@ -231,7 +232,7 @@
     }
 
     //传入的一段路线(两个相邻网点)的经纬度集合 开始动画 到达终点显示窗体
-    function segmentAnimal(arr,marker,passedPolyline,siteMarker) {
+    function segmentAnimal(arr,marker,passedPolyline,siteMarker,carId,siteId) {
 
         //沿着该路线行动
         marker.moveAlong(arr,1000);
@@ -241,7 +242,7 @@
         });
         //如果到达了终点站 则执行动作
         marker.on('movealong',function (e) {
-            reachSegmentActions(siteMarker);
+            reachSegmentActions(siteMarker,carId,siteId);
         });
 
 
@@ -254,15 +255,17 @@
             var siteMarker = new AMap.Marker({
                 map: map,
                 position: arr[i],
-                icon: 'http://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-default.png',
+                // icon: 'http://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-default.png',
+                icon: 'shop.png',
                 offset: new AMap.Pixel(-26,-13),
                 autoRotation: true,
-                angle: -90,
+                // angle: -90,
             });
             var context = idx+"条线路"+i+"个网点";
             siteMarker.setLabel({
                 offset: new AMap.Pixel(20, 20),  //设置文本标注偏移量
-                content: "<div class='info'>"+context+"</div>", //设置文本标注内容
+                // content: "<div class='info'>"+context+"</div>", //设置文本标注内容
+                content: context, //设置文本标注内容
                 direction: 'right' //设置文本标注方位
             });
             siteMarkers.push(siteMarker);
@@ -316,13 +319,16 @@
     }
 
     //设置到达网点后的动作
-    function reachSegmentActions(marker) {
+    function reachSegmentActions(marker,carId,siteId) {
         //到达后设置弹跳效果
         marker.setAnimation('AMAP_ANIMATION_BOUNCE');
-        var title = '已经到达第0条路线<span style="font-size:11px;color:#F00;">第0个网点</span>',
-            content = [];
+        var newSites = dynamicUpdate(carId+1,siteId+1);
+
+        var title = '已经到达第'+carId+'条路线<span style="font-size:11px;color:#F00;">第'+siteId+'个网点</span>';
+        var content = [];
         content.push("<img src='http://tpc.googlesyndication.com/simgad/5843493769827749134'>正在接收新订单...");
         content.push("正在为您重新规划路线，请稍等");
+        content.push("新的配送门店为"+newSites);
         //显示信息窗体
         var infoWindow = new AMap.InfoWindow({
             position:marker.getPosition(),
@@ -331,6 +337,21 @@
             offset: new AMap.Pixel(16, -45)
         });
         infoWindow.open(map,marker.getPosition());
+
+    }
+
+    //接收王鹏动态算法更新路径的函数 返回网点id的列表
+    function dynamicUpdate(carId,siteId) {
+        const xmlHttp = new XMLHttpRequest();
+        var URL = "http://10.141.209.224:5002/algo3/"+carId+"/"+siteId;
+        xmlHttp.open( "GET", URL, false );
+        xmlHttp.send( null );
+        const dynamicJson = xmlHttp.responseText;
+        var algo3 = JSON.parse(dynamicJson).algo3;
+        var algo3_item_path = algo3[carId].path;
+        console.log(algo3);
+        console.log(algo3_item_path);
+        return algo3_item_path;
     }
 
     //主要的函数的流程
@@ -354,17 +375,23 @@
         //遍历所有的路线
         for (var i = 0;i<routeSites.length;i++){
             //暂时只显示第一条路线
-            if(i==0) {
+            // if(i==0) {
 
                 //生成图标
                 var carMarker = new AMap.Marker({
                     map: map,
                     position: cangkuArr,
-                    content: "第" + i + "辆车",
+                    // content: "第" + i + "辆车",
                     icon: "https://webapi.amap.com/images/car.png",
+                    // icon: "truck.png",
                     offset: new AMap.Pixel(-26, -13),
                     autoRotation: true,
                     angle: -90,
+                });
+
+                carMarker.setLabel({
+                    offset: new AMap.Pixel(20, 20),  //设置文本标注偏移量
+                    content: "第" + i + "辆车",
                 });
 
 
@@ -387,7 +414,7 @@
                     //设置仅演示第一段的路径 到达之后暂停
                     if (j == 0) {
                         var passed = showPath(segmentRouteArr, i, "solid");
-                        segmentAnimal(segmentRouteArr, carMarker, passed,siteMarkers[j]);
+                        segmentAnimal(segmentRouteArr, carMarker, passed,siteMarkers[j],i,j);
                     }
 
 
@@ -401,11 +428,11 @@
                 // console.log(routeAllPoints);
                 //预先显示出规划的路线
                 var passedPolyline = showPath(routeAllPoints, i, "dashed");
-            }
+            // }
         }
     }
 
-    main()
+    main();
 
 </script>
 </body>
